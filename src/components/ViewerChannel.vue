@@ -1,166 +1,119 @@
 <template>
-	<div class="flex flex-col">
-		<div class="flex gap-2 my-2">
-			<input
-				v-model="channelId"
-				placeholder="Enter channel ID" />
-			<input
-				v-model="channelName"
-				placeholder="Enter channel Name" />
-			<button @click="joinChannel">Join Channel</button>
-			<button @click="quit">Quit Channel</button>
-		</div>
-		<div class="">
-			<video
-				class="relative top-0 right-0"
-				ref="localVideo"
-				width="240"
-				height="240"
-				autoplay
-				controls
-				playsinline></video>
-			<video
-				ref="remoteVideo"
-				width="full"
-				height="500"
-				autoplay
-				controls
-				playsinline></video>
-		</div>
-	</div>
+  <div>
+    <h1>Viewer</h1>
+    <video ref="remoteVideo" autoplay playsinline controls></video>
+    <video ref="localVideo" autoplay playsinline controls></video>
+  </div>
 </template>
 
-<script setup lang="ts">
-import { Role, SignalingClient } from 'amazon-kinesis-video-streams-webrtc';
-import { ref } from 'vue';
+<script lang="ts" setup>
+import {ref, onMounted, watch} from 'vue';
+import {
+  APP_STRUCTURE,
+  signalingClient,
+  endpointsByProtocol,
+  getIceSevers,
+  getChannelARN,
+  kinesisVideoSignalingChannelsClient} from '../config';
+import { Role } from "amazon-kinesis-video-streams-webrtc";
 
-const channelName = ref();
-const channelId = ref();
-const remoteVideo = ref();
-const localVideo = ref();
-let signalClient = ref<SignalingClient | null>(null);
-let peerConnection = ref<RTCPeerConnection | null>(null);
+const remoteVideo = ref<HTMLVideoElement | null>(null);
+const localVideo = ref<HTMLVideoElement | null>(null);
+const localStream = ref<MediaStream | null>(null);
+const remoteStream = ref<MediaStream | null>(null);
+const signalingClientRef = ref<any>(null);
+const peerConnection = ref<RTCPeerConnection | null>(null);
 
-async function getSignalingChannelEndpointResponse(channelARN: string) {
-	const endpoint = await kinesisVideo
-		.getSignalingChannelEndpoint({
-			ChannelARN: channelARN,
-			SingleMasterChannelEndpointConfiguration: {
-				Protocols: ['WSS', 'HTTPS'],
-				Role: Role.VIEWER,
-			},
-		})
-		.promise();
-	return endpoint.ResourceEndpointList?.reduce((endpoints, endpoint) => {
-		//@ts-ignore
-		endpoints[endpoint.Protocol] = endpoint.ResourceEndpoint;
-		return endpoints;
-	}, {});
-}
+const initSignaling = async () => {
+  const channelARN = await getChannelARN(APP_STRUCTURE.CHANNEL_NAME);
+  const endpoints = await endpointsByProtocol(Role.VIEWER, channelARN);
+  const kvsChannelsClient = kinesisVideoSignalingChannelsClient(endpoints.HTTPS);
+  const iceServers = await getIceSevers(kvsChannelsClient, endpoints.HTTPS, channelARN);
 
-const getChannelARN = async () => {
-	const channel = await kinesisVideo
-		.describeSignalingChannel({ ChannelName: channelName.value })
-		.promise();
-	return channel.ChannelInfo?.ChannelARN || '';
+  peerConnection.value = new RTCPeerConnection({ iceServers });
+
+
+  signalingClientRef.value = signalingClient({ channelARN, channelEndpoint: endpoints.WSS, clientId: 'viewer' });
+
+  signalingClientRef.value.on('open', async () => {
+    console.log('[VIEWER] Signaling viewer opened');
+    localStream.value = await navigator.mediaDevices.getUserMedia({
+      video: { width: { ideal: 1280 }, height: { ideal: 720 } },
+      audio: true
+    });
+
+    if(localVideo.value && localStream.value) {
+      localVideo.value.srcObject = localStream.value;
+      localStream.value.getTracks().forEach(track => peerConnection.value.addTrack(track, localStream.value));
+    }
+
+    // Create and send SDP offer
+    const offer = await peerConnection.value.createOffer({
+      offerToReceiveAudio: true,
+      offerToReceiveVideo: true,
+    });
+    await peerConnection.value.setLocalDescription(offer);
+    console.log('[VIEWER] Sending SDP offer:', offer);
+    await signalingClientRef.value.sendSdpOffer(offer);
+  });
+
+  signalingClientRef.value.on('sdpAnswer', async (answer: RTCSessionDescriptionInit) => {
+    console.log('[VIEWER] Received SDP answer:', answer);
+    try {
+      await peerConnection.value.setRemoteDescription(new RTCSessionDescription(answer));
+    } catch (error) {
+      console.error('[VIEWER] Error setting remote description:', error);
+    }
+  });
+
+  signalingClientRef.value.on('iceCandidate', (candidate: RTCIceCandidate) => {
+    console.log('[VIEWER] Received ICE candidate:', candidate);
+    if (peerConnection.value) {
+      peerConnection.value.addIceCandidate(new RTCIceCandidate(candidate));
+    }
+  });
+
+  peerConnection.value.addEventListener('icecandidate', ({ candidate }) => {
+    if (candidate) {
+      // console.log('[VIEWER] Sending ICE candidate:', candidate);
+      signalingClientRef.value.sendIceCandidate(candidate);
+    }else{
+      console.log('[VIEWER] all candidate is sended');
+    }
+  });
+
+  peerConnection.value.addEventListener('track', event => {
+    console.log('[VIEWER] Received remote track with id:', event?.streams[0]?.id ?? '[Error retrieving track ID]');
+    console.log('[VIEWER] received remote track', event.streams);
+    if (event.streams && event.streams[0]) {
+      remoteStream.value = event.streams[0];
+      remoteVideo.value.srcObject = remoteStream.value;
+    } else {
+      console.error('[VIEWER] No streams received in track event');
+    }
+  });
+
+  peerConnection.value.addEventListener('signalingstatechange', () => {
+    console.log('[VIEWER] peerConnection state:', peerConnection.value.connectionState);
+    console.log(peerConnection.value)
+  });
+
+  signalingClientRef.value.on('error', error => {
+    console.error('[VIEWER] Signaling error:', error);
+  })
+
+  signalingClientRef.value.open();
 };
 
-async function joinChannel() {
-	const channelARN = await getChannelARN();
-	const endpoint = await getSignalingChannelEndpointResponse(channelARN);
-	signalClient.value = new SignalingClient({
-		channelARN: channelARN,
-		clientId: channelId.value,
-		role: Role.VIEWER,
-		region: 'us-west-2',
-		//@ts-ignore
-		channelEndpoint: endpoint.HTTPS,
-		credentials: {
-			accessKeyId: 'AKIATDLD55P2443PFW6H',
-			secretAccessKey: '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',
-		},
-	});
-	peerConnection.value = new RTCPeerConnection({
-		iceServers: [
-			{
-				urls: 'stun:stun.kinesisvideo.us-west-2.amazonaws.com:443',
-			},
-		],
-		iceTransportPolicy: 'all',
-	});
+onMounted(() => {
+  initSignaling();
+});
 
-	signalClient.value.on('open', async () => {
-		console.log('hello open webRTC');
-		const localStream = await navigator.mediaDevices.getUserMedia({
-			video: true,
-			audio: false,
-		});
-		localStream
-			.getTracks()
-			.forEach((track) => peerConnection.value?.addTrack(track, localStream));
-		localVideo.value.srcObject = localStream;
-
-		const offer = await peerConnection.value?.createOffer({
-			offerToReceiveAudio: true,
-			offerToReceiveVideo: true,
-		});
-		await peerConnection.value?.setLocalDescription(offer);
-
-		signalClient.value?.sendSdpOffer(peerConnection.value?.localDescription!);
-	});
-
-	signalClient.value.on('sdpAnswer', async (answer) => {
-		await peerConnection.value?.setRemoteDescription(answer);
-	});
-
-	signalClient.value.on('iceCandidate', (candidate) => {
-		peerConnection.value?.addIceCandidate(candidate);
-	});
-
-	peerConnection.value?.addEventListener('icecandidate', ({ candidate }) => {
-		if (candidate) {
-			console.log('[VIEWER] Generated ICE candidate', 'ICE candidate:', candidate);
-			signalClient.value?.sendIceCandidate(candidate);
-		} else {
-			console.log('[VIEWER] All ICE candidates have been generated');
-		}
-	});
-
-	signalClient.value.on('close', () => {
-		console.log('[VIEWER] Disconnected from signaling channel');
-	});
-
-	signalClient.value.on('error', (error) => {
-		console.error('[VIEWER] Signaling client error:', error);
-	});
-
-	peerConnection.value?.addEventListener('connectionstatechange', async (event) => {
-		console.log('status change', event);
-	});
-
-	peerConnection.value?.addEventListener('track', (event) => {
-		console.log(
-			'[VIEWER] Received remote track with id:',
-			event?.streams[0]?.id ?? '[Error retrieving track ID]'
-		);
-		if (remoteVideo.value.srcObject) {
-			return;
-		}
-		remoteVideo.value.srcObject = event.streams[0];
-	});
-
-	signalClient.value.open();
-}
-
-function quit() {
-	if (signalClient.value) {
-		signalClient.value.close();
-	}
-	if (peerConnection.value) {
-		peerConnection.value.close();
-	}
-
-	remoteVideo.value.getTracks().forEach((track) => track.stop());
-	remoteVideo.value.srcObject = null;
-}
 </script>
+
+<style scoped>
+video {
+  width: 100%;
+  height: auto;
+}
+</style>

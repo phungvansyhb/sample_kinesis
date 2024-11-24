@@ -1,103 +1,113 @@
 <template>
-	<div class="flex flex-col">
-		<div class="flex gap-2 mb-2">
-			<input
-				v-model="channelName"
-				placeholder="Enter channel name" />
-			<button @click="createChannel">Create Channel</button>
-			<button @click="stopChannel">Stop Channel</button>
-		</div>
-
-		<video
-			ref="localVideo"
-			width="800"
-			height="500"
-			autoplay
-			controls
-			playsinline></video>
-    <video
-        ref="remoteVideo"
-        width="800"
-        height="500"
-        autoplay
-        controls
-        playsinline></video>
-	</div>
+  <div>
+    <h1>Master</h1>
+    <video ref="localVideo" autoplay playsinline controls></video>
+    <video ref="remoteVideo" autoplay playsinline controls></video>
+  </div>
 </template>
 
 <script lang="ts" setup>
-import {kinesisVideoClient , kinesisVideoSignalingChannelsClient} from '../config';
-import { ref } from 'vue';
+import { onMounted, ref } from 'vue';
+import {
+  APP_STRUCTURE,
+  endpointsByProtocol,
+  getChannelARN,
+  getIceSevers,
+  kinesisVideoSignalingChannelsClient,
+  signalingMaster
+} from '../config';
+import { Role } from "amazon-kinesis-video-streams-webrtc";
 
-const channelName = ref('');
-const localVideo = ref();
-const remoteVideo = ref();
-let mediaRecorder: any;
+const localVideo = ref<HTMLVideoElement | null>(null);
+const remoteVideo = ref<HTMLVideoElement | null>(null);
+const localStream = ref<MediaStream | null>(null);
+const remoteStream = ref<MediaStream | null>(null);
+const signalingMasterRef = ref<any>(null);
+const peerConnection = ref<RTCPeerConnection | null>(null);
 
-const createChannel = async () => {
-	if (channelName.value) {
-		const params = {
-			StreamName: channelName.value,
-			DataRetentionInHours: 24,
-		};
+const initSignaling = async () => {
+  const channelARN = await getChannelARN(APP_STRUCTURE.CHANNEL_NAME);
+  const endpoints = await endpointsByProtocol(Role.MASTER, channelARN);
+  const kvsChannelsClient = kinesisVideoSignalingChannelsClient(endpoints.HTTPS);
+  const iceServers = await getIceSevers(kvsChannelsClient, endpoints.HTTPS, channelARN);
 
-		try {
-			await kinesisVideoClient.createStream(params).promise();
-			startVideoStream();
-		} catch (e) {
-			console.log('create stream error', e);
-		}
 
-		try {
-			const signaling = await kinesisVideoClient
-				.createSignalingChannel({
-					ChannelName: channelName.value,
-				})
-				.promise();
-			console.log('create signaling success', signaling);
-		} catch (e) {
-			console.log('create signaling error', e);
-		}
+  peerConnection.value = new RTCPeerConnection({ iceServers });
 
-	} else {
-		alert('Please enter a channel name.');
-	}
-};
 
-const startVideoStream = () => {
-	navigator.mediaDevices
-		.getUserMedia({ video: true })
-		.then((stream) => {
-			console.log('Stream obtained:', stream);
-			videoRef.value.srcObject = stream;
-			mediaRecorder = new MediaRecorder(stream);
-			mediaRecorder.ondataavailable = (event) => {
-					const data = event.data;
-					const params = {
-						StreamName: channelName.value,
-						Data: data,
-						PartitionKey: 'partition-key',
-					};
-					kinesisVideo.putRecord(params, (err, data) => {
-						if (err) console.error(err);
-						else console.log('Successfully sent data to Kinesis Video Stream', data);
-					});
-			};
-			mediaRecorder.start();
-		})
-		.catch((error) => console.error('Error accessing media devices.', error));
-};
+  signalingMasterRef.value = signalingMaster({ channelARN, channelEndpoint: endpoints.WSS });
 
-const stopChannel = () => {
-	if (mediaRecorder) {
-		mediaRecorder.stop();
-		console.log('MediaRecorder stopped.');
-	}
-	if (videoRef.value && videoRef.value.srcObject) {
-		const tracks = videoRef.value.srcObject.getTracks();
-		tracks.forEach((track) => track.stop());
-		videoRef.value.srcObject = null;
-		console.log('Video stream stopped.');
-	}
-};
+  signalingMasterRef.value.on('open', async () => {
+    console.log('[MASTER] Signaling master opened');
+    localStream.value = await navigator.mediaDevices.getUserMedia({
+      video: { width: { ideal: 1280 }, height: { ideal: 720 } },
+      audio: true
+    });
+    if (localVideo.value && localStream.value) {
+      localVideo.value.srcObject = localStream.value;
+      localStream.value.getTracks().forEach(track => peerConnection.value.addTrack(track, localStream.value));
+    }
+    console.log('[MASTER] waiting for other viewer ... ');
+  });
+
+  signalingMasterRef.value.on('sdpOffer', async (offer, remoteClientId) => {
+    console.log('[MASTER] received SDP offer from', remoteClientId);
+    try {
+      await peerConnection.value.setRemoteDescription(new RTCSessionDescription(offer));
+    } catch (error) {
+      console.error('[MASTER] Error setting remote description:', error);
+    }
+    const answer = await peerConnection.value.createAnswer();
+    await peerConnection.value.setLocalDescription(answer);
+    console.log('[MASTER] sending SDP answer:', answer);
+    await signalingMasterRef.value.sendSdpAnswer(answer,remoteClientId);
+  });
+
+  signalingMasterRef.value.on('iceCandidate', (candidate: RTCIceCandidate) => {
+    if (candidate) {
+      // console.log('[MASTER] Sending ICE candidate:', candidate);
+      signalingMasterRef.value.sendIceCandidate(candidate);
+    } else {
+      console.log('[MASTER] All ICE candidates have been sent');
+    }
+  });
+
+  signalingMasterRef.value.on('error', (error) => {
+    console.error('[MASTER] Signaling error:', error);
+  })
+  peerConnection.value.addEventListener('icecandidate', ({ candidate }) => {
+    if (candidate) {
+      signalingMasterRef.value.sendIceCandidate(candidate);
+    }
+  });
+
+
+  peerConnection.value.addEventListener('track', event => {
+    console.log('[MASTER] received remote track', event.streams);
+    if (event.streams && event.streams[0]) {
+      remoteStream.value = event.streams[0];
+      remoteVideo.value.srcObject = remoteStream.value;
+    } else {
+      console.error('[MASTER] No streams received in track event');
+    }
+  });
+
+  peerConnection.value.addEventListener('connectionstatechange', () => {
+    console.log('[MASTER] peerConnection state:', peerConnection.value.connectionState);
+  });
+
+
+  signalingMasterRef.value.open();
+}
+
+onMounted(() => {
+  initSignaling();
+});
 </script>
+
+<style scoped>
+video {
+  width: 100%;
+  height: auto;
+}
+</style>
