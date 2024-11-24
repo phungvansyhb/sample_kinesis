@@ -8,6 +8,7 @@ export const APP_STRUCTURE = {
     LOCAL_VIDEO: 'local-video',
     REMOTE_VIDEO: 'remote-video',
     CHANNEL_NAME: 'eya3',
+    DATA_CHANNEL: 'chat-chit'
 };
 
 const kinesisVideoClient = new AWS.KinesisVideo({

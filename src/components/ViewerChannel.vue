@@ -1,9 +1,29 @@
 <template>
-  <div>
-    <h1>Viewer</h1>
-    <video ref="remoteVideo" autoplay playsinline controls></video>
-    <video ref="localVideo" autoplay playsinline controls></video>
-  </div>
+  <h1>You are viewer</h1>
+
+  <section class="grid grid-cols-2 gap-2 w-full">
+    <div>
+      <h2>Viewer cam:</h2>
+      <video ref="localVideo" autoplay playsinline controls></video>
+      <h2>Master cam:</h2>
+      <video ref="remoteVideo" autoplay playsinline controls></video>
+    </div>
+    <section class="py-4">
+      <div class="text-left">
+        <input v-model="message" placeholder="Type your message " class="w-full h-10 p-1 border rounded-lg" />
+        <button @click="sendMessage" >Send</button>
+      </div>
+
+      <div class="border bg-white min-h-[200px] w-full rounded-lg ">
+        <ul>
+          <li v-for="msg in receivedMessages" :key="msg" class="text-black">{{ msg }}</li>
+        </ul>
+      </div>
+    </section>
+  </section>
+
+
+
 </template>
 
 <script lang="ts" setup>
@@ -23,6 +43,10 @@ const localStream = ref<MediaStream | null>(null);
 const remoteStream = ref<MediaStream | null>(null);
 const signalingClientRef = ref<any>(null);
 const peerConnection = ref<RTCPeerConnection | null>(null);
+
+const dataChannel = ref<RTCDataChannel | null>(null);
+const message = ref('');
+const receivedMessages = ref<string[]>([]);
 
 const initSignaling = async () => {
   const channelARN = await getChannelARN(APP_STRUCTURE.CHANNEL_NAME);
@@ -69,7 +93,7 @@ const initSignaling = async () => {
   signalingClientRef.value.on('iceCandidate', (candidate: RTCIceCandidate) => {
     console.log('[VIEWER] Received ICE candidate:', candidate);
     if (peerConnection.value) {
-      peerConnection.value.addIceCandidate(new RTCIceCandidate(candidate));
+      peerConnection.value.addIceCandidate(candidate);
     }
   });
 
@@ -98,11 +122,34 @@ const initSignaling = async () => {
     console.log(peerConnection.value)
   });
 
+  dataChannel.value = peerConnection.value.createDataChannel(APP_STRUCTURE.DATA_CHANNEL,{ negotiated: true, id: 0 });
+
+  // Set up event listeners for the DataChannel
+  dataChannel.value.onopen = () => {
+    console.log('[VIEWER] Data channel is open');
+    dataChannel.value.send('Hello from Viewer!');
+  };
+
+  dataChannel.value.onmessage = (event) => {
+    console.log('[VIEWER] Message received:', event.data);
+    receivedMessages.value.push(event.data); // Store the received message
+  };
+
   signalingClientRef.value.on('error', error => {
     console.error('[VIEWER] Signaling error:', error);
   })
 
   signalingClientRef.value.open();
+};
+
+const sendMessage = () => {
+  if (dataChannel.value && dataChannel.value.readyState === 'open') {
+    dataChannel.value.send(message.value);
+    console.log('[VIEWER] Sent message:', message.value);
+    message.value = ''; // Clear the input after sending
+  } else {
+    console.error('[VIEWER] Data channel is not open');
+  }
 };
 
 onMounted(() => {
