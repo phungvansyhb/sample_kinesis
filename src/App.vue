@@ -7,6 +7,8 @@
     <Master v-if="role === 'master'" />
     <Viewer v-if="role === 'viewer'" />
     <MasterStreamAssetChannel v-if="role === 'local-asset'" />
+
+<!--    <video id="hlsjs" class="w-[1000px] h-[400px]" controls autoplay></video>-->
   </div>
 </template>
 

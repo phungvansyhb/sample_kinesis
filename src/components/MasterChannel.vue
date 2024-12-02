@@ -1,30 +1,25 @@
 <template>
-  <div>
-    <h1>You are master</h1>
-    <section class="grid grid-cols-4 gap-2">
-      <div class="col-span-3">
-        <video ref="localVideo" autoplay playsinline controls></video>
+    <section class="flex gap-2 ">
+
+      <div class="flex-grow">
+        <video ref="localVideo" class="w-full h-auto" autoplay playsinline controls></video>
+        <button @click="getHLSUrl">Get Link HLS</button>
       </div>
-      <div>
-        <section>
-          <video ref="remoteVideo" autoplay playsinline controls></video>
-          <h2>{{remoteVideo?.id}}</h2>
-        </section>
+
+      <div class="w-[300px]">
+        <div class="flex gap-2 ">
+          <input v-model="message" placeholder="Type your message " class="w-full h-10 p-1 border rounded-lg" />
+          <button @click="sendMessage" :disabled="dataChannel?.readyState !== 'open'">Send</button>
+        </div>
+
+        <div class="border bg-white min-h-[200px] w-full rounded-lg">
+          <ul>
+            <li v-for="msg in receivedMessages" :key="msg" class="text-black">{{ msg }}</li>
+          </ul>
+        </div>
       </div>
+
     </section>
-
-    <div class="text-left">
-      <input v-model="message" placeholder="Type your message " class="w-2/3 h-10 p-1 border rounded-lg" />
-      <button @click="sendMessage" :disabled="dataChannel?.readyState !== 'open'">Send</button>
-    </div>
-
-    <div class="border bg-white min-h-[200px] w-2/3 rounded-lg">
-      <ul>
-        <li v-for="msg in receivedMessages" :key="msg" class="text-black">{{ msg }}</li>
-      </ul>
-    </div>
-
-  </div>
 </template>
 
 <script lang="ts" setup>
@@ -32,19 +27,17 @@ import { onMounted, ref } from 'vue';
 import {
   APP_STRUCTURE,
   endpointsByProtocol,
-  getChannelARN,
-  getIceSevers,
+  getChannelARN, getHLSSessionURL,
+  getIceSevers, kinesisVideoClient,
   kinesisVideoSignalingChannelsClient,
   signalingMaster
 } from '../config';
-import { Role } from "amazon-kinesis-video-streams-webrtc";
+import {Role, SignalingClient} from "amazon-kinesis-video-streams-webrtc";
 
 const localVideo = ref<HTMLVideoElement | null>(null);
-const remoteVideo = ref<HTMLVideoElement | null>(null);
 const localStream = ref<MediaStream | null>(null);
-const remoteStream = ref<MediaStream | null>(null);
 const signalingMasterRef = ref<any>(null);
-const peerConnection = ref<RTCPeerConnection | null>(null);
+const peerConnection = ref<{ [key:string] : RTCPeerConnection } >({});
 
 const dataChannel = ref<RTCDataChannel | null>(null);
 const message = ref('');
@@ -56,12 +49,8 @@ const initSignaling = async () => {
   const kvsChannelsClient = kinesisVideoSignalingChannelsClient(endpoints.HTTPS);
   const iceServers = await getIceSevers(kvsChannelsClient, endpoints.HTTPS, channelARN);
 
-
-  peerConnection.value = new RTCPeerConnection({ iceServers });
-
-
   signalingMasterRef.value = signalingMaster({ channelARN, channelEndpoint: endpoints.WSS });
-
+  // await kinesisVideoClient.createStream({StreamName : APP_STRUCTURE.STREAM_NAME , DataRetentionInHours : 1}).promise()
   signalingMasterRef.value.on('open', async () => {
     console.log('[MASTER] Signaling master opened');
     localStream.value = await navigator.mediaDevices.getUserMedia({
@@ -70,72 +59,75 @@ const initSignaling = async () => {
     });
     if (localVideo.value && localStream.value) {
       localVideo.value.srcObject = localStream.value;
-      localStream.value.getTracks().forEach(track => peerConnection.value.addTrack(track, localStream.value));
+      // localStream.value.getTracks().forEach(track => peerConnection.value.addTrack(track, localStream.value));
     }
     console.log('[MASTER] waiting for other viewer ... ');
   });
 
   signalingMasterRef.value.on('sdpOffer', async (offer, remoteClientId) => {
-    console.log('[MASTER] received SDP offer from', remoteClientId);
-    remoteVideo.value.id = remoteClientId;
+    console.log('[MASTER] received SDP offer from', remoteClientId)
+    createPeer(remoteClientId , iceServers)
     try {
-      await peerConnection.value.setRemoteDescription(new RTCSessionDescription(offer));
+      await peerConnection.value[remoteClientId].setRemoteDescription(new RTCSessionDescription(offer));
     } catch (error) {
       console.error('[MASTER] Error setting remote description:', error);
     }
-    const answer = await peerConnection.value.createAnswer();
-    await peerConnection.value.setLocalDescription(answer);
+    const answer = await peerConnection.value[remoteClientId].createAnswer();
+    await peerConnection.value[remoteClientId].setLocalDescription(answer);
     console.log('[MASTER] sending SDP answer:', answer);
     await signalingMasterRef.value.sendSdpAnswer(answer,remoteClientId);
   });
 
-  signalingMasterRef.value.on('iceCandidate', (candidate: RTCIceCandidate) => {
+  signalingMasterRef.value.on('iceCandidate', (candidate: RTCIceCandidate , remoteClientId:string) => {
+    console.log('iceCandidate received from ',remoteClientId)
     if (candidate) {
-      peerConnection.value.addIceCandidate(candidate);
+      peerConnection.value[remoteClientId].addIceCandidate(candidate);
     } else {
       console.log('[MASTER] All ICE candidates have been sent');
     }
   });
 
-  peerConnection.value.addEventListener('icecandidate', ({ candidate }) => {
-    if (candidate) {
-      signalingMasterRef.value.sendIceCandidate(candidate);
-    }
-  });
-
-
-  peerConnection.value.addEventListener('track', event => {
-    console.log('[MASTER] received remote track', event.streams);
-    if (event.streams && event.streams[0]) {
-      remoteStream.value = event.streams[0];
-      remoteVideo.value.srcObject = remoteStream.value;
-    } else {
-      console.error('[MASTER] No streams received in track event');
-    }
-  });
-
-  peerConnection.value.addEventListener('connectionstatechange', () => {
-    console.log('[MASTER] peerConnection state:', peerConnection.value.connectionState);
-  });
-
-  dataChannel.value = peerConnection.value.createDataChannel(APP_STRUCTURE.DATA_CHANNEL,{ negotiated: true, id: 0 });
-
-  // Set up event listeners for the DataChannel
-  dataChannel.value.onopen = () => {
-    console.log('[MASTER] Data channel is open');
-    dataChannel.value.send('Hello from Master!');
-  };
-
-  dataChannel.value.onmessage = (event) => {
-    console.log('[MASTER] Message received:', event.data);
-    receivedMessages.value.push(event.data); // Store the received message
-  };
+  // dataChannel.value = peerConnection.value.createDataChannel(APP_STRUCTURE.DATA_CHANNEL,{ negotiated: true, id: 0 });
+  //
+  // dataChannel.value.onopen = () => {
+  //   console.log('[MASTER] Data channel is open');
+  //   dataChannel.value.send('Hello from Master!');
+  // };
+  //
+  // dataChannel.value.onmessage = (event) => {
+  //   console.log('[MASTER] Message received:', event.data);
+  //   receivedMessages.value.push(event.data); // Store the received message
+  // };
 
   signalingMasterRef.value.on('error', (error) => {
     console.error('[MASTER] Signaling error:', error);
   })
 
   signalingMasterRef.value.open();
+}
+
+function createPeer(clientId , iceServers : any){
+  peerConnection.value[clientId] = new RTCPeerConnection({ iceServers });
+
+  localStream.value.getTracks().forEach(track => peerConnection.value[clientId].addTrack(track, localStream.value));
+
+  peerConnection.value[clientId].addEventListener('icecandidate', ({ candidate }) => {
+    if (candidate) {
+      signalingMasterRef.value.sendIceCandidate(candidate);
+    }
+  });
+
+  peerConnection.value[clientId].addEventListener('track', event => {
+    console.log('[MASTER] received remote track', event.streams);
+    if (event.streams && event.streams[0]) {
+    } else {
+      console.error('[MASTER] No streams received in track event');
+    }
+  });
+
+  peerConnection.value[clientId].addEventListener('connectionstatechange', () => {
+    console.log('[MASTER] peerConnection state:', peerConnection.value.connectionState);
+  });
 }
 
 const sendMessage = () => {
@@ -148,14 +140,13 @@ const sendMessage = () => {
   }
 };
 
+async function getHLSUrl() {
+  const hlsUrl =await getHLSSessionURL()
+  console.log(hlsUrl)
+  return hlsUrl;
+}
+
 onMounted(() => {
   initSignaling();
 });
 </script>
-
-<style scoped>
-video {
-  width: 100%;
-  height: auto;
-}
-</style>

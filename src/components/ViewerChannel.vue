@@ -1,28 +1,22 @@
 <template>
-  <h1>You are viewer</h1>
-
-  <section class="grid grid-cols-2 gap-2 w-full">
-    <div>
-      <h2>Viewer cam:</h2>
-      <video ref="localVideo" autoplay playsinline controls></video>
-      <h2>Master cam:</h2>
-      <video ref="remoteVideo" autoplay playsinline controls></video>
+  <section class="flex gap-2 ">
+    <div class="flex-grow">
+      <video ref="remoteVideo" class="w-full h-auto" autoplay playsinline controls></video>
     </div>
-    <section class="py-4">
-      <div class="text-left">
+
+    <div class="w-[300px]">
+      <div class="flex gap-2 ">
         <input v-model="message" placeholder="Type your message " class="w-full h-10 p-1 border rounded-lg" />
-        <button @click="sendMessage" >Send</button>
+        <button @click="sendMessage" :disabled="dataChannel?.readyState !== 'open'">Send</button>
       </div>
 
-      <div class="border bg-white min-h-[200px] w-full rounded-lg ">
+      <div class="border bg-white min-h-[200px] w-full rounded-lg">
         <ul>
           <li v-for="msg in receivedMessages" :key="msg" class="text-black">{{ msg }}</li>
         </ul>
       </div>
-    </section>
+    </div>
   </section>
-
-
 
 </template>
 
@@ -38,8 +32,6 @@ import {
 import { Role } from "amazon-kinesis-video-streams-webrtc";
 
 const remoteVideo = ref<HTMLVideoElement | null>(null);
-const localVideo = ref<HTMLVideoElement | null>(null);
-const localStream = ref<MediaStream | null>(null);
 const remoteStream = ref<MediaStream | null>(null);
 const signalingClientRef = ref<any>(null);
 const peerConnection = ref<RTCPeerConnection | null>(null);
@@ -53,29 +45,20 @@ const initSignaling = async () => {
   const endpoints = await endpointsByProtocol(Role.VIEWER, channelARN);
   const kvsChannelsClient = kinesisVideoSignalingChannelsClient(endpoints.HTTPS);
   const iceServers = await getIceSevers(kvsChannelsClient, endpoints.HTTPS, channelARN);
-
+  const clientId = 'viewer_'+Math.round(Math.random()*100)
   peerConnection.value = new RTCPeerConnection({ iceServers });
 
-
-  signalingClientRef.value = signalingClient({ channelARN, channelEndpoint: endpoints.WSS, clientId: 'viewer' });
+  signalingClientRef.value = signalingClient({ channelARN, channelEndpoint: endpoints.WSS, clientId: clientId });
 
   signalingClientRef.value.on('open', async () => {
     console.log('[VIEWER] Signaling viewer opened');
-    localStream.value = await navigator.mediaDevices.getUserMedia({
-      video: { width: { ideal: 1280 }, height: { ideal: 720 } },
-      audio: true
-    });
-
-    if(localVideo.value && localStream.value) {
-      localVideo.value.srcObject = localStream.value;
-      localStream.value.getTracks().forEach(track => peerConnection.value.addTrack(track, localStream.value));
-    }
 
     // Create and send SDP offer
     const offer = await peerConnection.value.createOffer({
       offerToReceiveAudio: true,
       offerToReceiveVideo: true,
     });
+
     await peerConnection.value.setLocalDescription(offer);
     console.log('[VIEWER] Sending SDP offer:', offer);
     await signalingClientRef.value.sendSdpOffer(offer);
@@ -157,10 +140,3 @@ onMounted(() => {
 });
 
 </script>
-
-<style scoped>
-video {
-  width: 100%;
-  height: auto;
-}
-</style>

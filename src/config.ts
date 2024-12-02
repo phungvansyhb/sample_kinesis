@@ -1,4 +1,5 @@
 import AWS, {KinesisVideoSignalingChannels} from 'aws-sdk';
+
 import {Role, SignalingClient, SigV4RequestSigner} from "amazon-kinesis-video-streams-webrtc";
 
 export const APP_STRUCTURE = {
@@ -8,6 +9,7 @@ export const APP_STRUCTURE = {
     LOCAL_VIDEO: 'local-video',
     REMOTE_VIDEO: 'remote-video',
     CHANNEL_NAME: 'eya3',
+    STREAM_NAME: 'thatlamet',
     DATA_CHANNEL: 'chat-chit'
 };
 
@@ -126,6 +128,60 @@ const signalingMaster = ({channelARN , channelEndpoint } :
     // }
 })
 
+async function getHLSPlaybackURL() {
+    try {
+        const response = await kinesisVideoClient.getDataEndpoint({
+            StreamName: APP_STRUCTURE.STREAM_NAME,
+            APIName: 'GET_HLS_STREAMING_SESSION_URL',
+        }).promise();
+
+        return response.DataEndpoint;
+
+    } catch (error) {
+        console.error('Error getting HLS URL:', error);
+    }
+}
+
+async function getHLSSessionURL(){
+    const hlsDataEndpoint = await getHLSPlaybackURL();
+    const archivedMediaClientConfig = {
+        accessKeyId: APP_STRUCTURE.ACCESS_KEY,
+        secretAccessKey: APP_STRUCTURE.SECRET_KEY,
+        region: APP_STRUCTURE.REGION,
+        endpoint: hlsDataEndpoint
+    };
+    const kinesisVideoArchivedMediaClient = new AWS.KinesisVideoArchivedMedia(archivedMediaClientConfig);
+    const getHLSStreamingSessionURLOptions = {
+        StreamName: APP_STRUCTURE.STREAM_NAME,
+        PlaybackMode: 'LIVE'
+    };
+    const getHLSStreamingSessionURLResponse = await kinesisVideoArchivedMediaClient
+        .getHLSStreamingSessionURL(getHLSStreamingSessionURLOptions)
+        .promise();
+    return getHLSStreamingSessionURLResponse.HLSStreamingSessionURL;
+}
+
+// async function sendToKVS(data : Blob) {
+//     const kinesisVideoMedia = new AWS.KinesisVideoMedia({
+//         region: APP_STRUCTURE.REGION,
+//         accessKeyId: APP_STRUCTURE.ACCESS_KEY,
+//         secretAccessKey: APP_STRUCTURE.SECRET_KEY,
+//     });
+//     const params = {
+//         StreamName: APP_STRUCTURE.STREAM_NAME,
+//         Data: data,
+//         PartitionKey: 'partitionKey', // You can use a unique key for partitioning
+//     };
+//
+//     try {
+//         const response = await kinesisVideoMedia.(params).promise();
+//         console.log('Record sent to KVS:', response);
+//     } catch (error) {
+//         console.error('Error sending record to KVS:', error);
+//     }
+// };
+
+
 
 export {
     kinesisVideoSignalingChannelsClient,
@@ -134,5 +190,6 @@ export {
     endpointsByProtocol,
     signalingClient,
     signalingMaster,
-    getChannelARN
+    getChannelARN,
+    getHLSSessionURL
 } ;
