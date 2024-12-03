@@ -1,16 +1,16 @@
-import AWS, {KinesisVideoSignalingChannels} from 'aws-sdk';
-
+import AWS, {KinesisVideoSignalingChannels, KinesisVideoWebRTCStorage} from 'aws-sdk';
+import { KinesisVideoWebRTCStorageClient, JoinStorageSessionCommand } from "@aws-sdk/client-kinesis-video-webrtc-storage";
 import {Role, SignalingClient, SigV4RequestSigner} from "amazon-kinesis-video-streams-webrtc";
 
 export const APP_STRUCTURE = {
-    REGION: 'us-west-2',
+    REGION: 'us-east-1',  // webRTC store chi ho tro o region nay
     ACCESS_KEY: 'AKIATDLD55P2443PFW6H',
     SECRET_KEY: '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',
     LOCAL_VIDEO: 'local-video',
     REMOTE_VIDEO: 'remote-video',
-    CHANNEL_NAME: 'eya3',
-    STREAM_NAME: 'thatlamet',
-    DATA_CHANNEL: 'chat-chit'
+    DATA_CHANNEL: 'chat-chit',
+    CHANNEL_NAME: 'hihi',
+    STREAM_NAME: 'haha'
 };
 
 const kinesisVideoClient = new AWS.KinesisVideo({
@@ -33,7 +33,7 @@ const getSignalingChannelEndpointResponse =  async (role:Role,channelARN: string
     .getSignalingChannelEndpoint({
         ChannelARN: channelARN,
         SingleMasterChannelEndpointConfiguration: {
-            Protocols: ['WSS', 'HTTPS'],
+            Protocols: ['WSS', 'HTTPS',"WEBRTC"],
             Role: role,
         },
     })
@@ -44,7 +44,7 @@ const endpointsByProtocol = async (role:Role, channelARN: string) => {
     return endpoints.ResourceEndpointList.reduce((endpoints, endpoint) => {
         endpoints[endpoint.Protocol] = endpoint.ResourceEndpoint;
         return endpoints;
-    }, {}) as {HTTPS : string , WSS : string};
+    }, {}) as {HTTPS : string , WSS : string , WEBRTC : string};
 }
 
 const kinesisVideoSignalingChannelsClient = (endpointsByProtocolHTTPS : string) => new AWS.KinesisVideoSignalingChannels({
@@ -128,7 +128,7 @@ const signalingMaster = ({channelARN , channelEndpoint } :
     // }
 })
 
-async function getHLSPlaybackURL() {
+async function getHLSPlaybackURL(  ) {
     try {
         const response = await kinesisVideoClient.getDataEndpoint({
             StreamName: APP_STRUCTURE.STREAM_NAME,
@@ -161,29 +161,28 @@ async function getHLSSessionURL(){
     return getHLSStreamingSessionURLResponse.HLSStreamingSessionURL;
 }
 
-// async function sendToKVS(data : Blob) {
-//     const kinesisVideoMedia = new AWS.KinesisVideoMedia({
-//         region: APP_STRUCTURE.REGION,
-//         accessKeyId: APP_STRUCTURE.ACCESS_KEY,
-//         secretAccessKey: APP_STRUCTURE.SECRET_KEY,
-//     });
-//     const params = {
-//         StreamName: APP_STRUCTURE.STREAM_NAME,
-//         Data: data,
-//         PartitionKey: 'partitionKey', // You can use a unique key for partitioning
-//     };
-//
-//     try {
-//         const response = await kinesisVideoMedia.(params).promise();
-//         console.log('Record sent to KVS:', response);
-//     } catch (error) {
-//         console.error('Error sending record to KVS:', error);
-//     }
-// };
+async function joinStorageSessionManually(webrtcEndpoint : string){
+    const client = new KinesisVideoWebRTCStorageClient({
+        region: APP_STRUCTURE.REGION,
+        credentials : {
+            accessKeyId: APP_STRUCTURE.ACCESS_KEY,
+            secretAccessKey: APP_STRUCTURE.SECRET_KEY,
+        },
+        endpoint: webrtcEndpoint,
+    });
+    const channelARN = await getChannelARN(APP_STRUCTURE.CHANNEL_NAME)
+    const input = {
+        channelArn: channelARN
+    };
+    const command = new JoinStorageSessionCommand(input);
+    await client.send(command);
+    window.alert('join storage succes , ready to get HLS url')
+}
 
 
 
 export {
+    joinStorageSessionManually,
     kinesisVideoSignalingChannelsClient,
     kinesisVideoClient,
     getIceSevers,
