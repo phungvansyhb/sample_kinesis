@@ -6,20 +6,20 @@
 
 <script lang="ts" setup>
 import { ref, onMounted, onBeforeUnmount } from 'vue';
-import { createPlayer } from 'amazon-ivs-player';
+import IVSPlayer from 'amazon-ivs-player';
 
+
+const isSupport = IVSPlayer.isPlayerSupported
 const videoContainer = ref<HTMLDivElement | null>(null);
 let player: any;
 
-const videoUrl = 'https://your-ivs-url.m3u8'; // Thay thế bằng URL của bạn
+const props = defineProps<{videoUrl : string}>()
 
 onMounted(() => {
   if (videoContainer.value) {
-    player = createPlayer({
-      autoplay: true
-    });
+    player = IVSPlayer.create({wasmBinary : '',wasmWorker : ''});
     player.attachMediaElement(videoContainer.value);
-    player.load(videoUrl);
+    player.load(props.videoUrl);
     player.play();
   }
 });

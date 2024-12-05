@@ -1,4 +1,4 @@
-async function handlePermissions() {
+export async function handlePermissions() {
     let permissions = {
         audio: false,
         video: false,
@@ -21,35 +21,42 @@ async function handlePermissions() {
     }
 }
 
-async function listDevice() {
+export async function listDevice() {
     const devices = await navigator.mediaDevices.enumerateDevices();
-    window.videoDevices = devices.filter((d) => d.kind === 'videoinput');
-    window.audioDevices = devices.filter((d) => d.kind === 'audioinput');
+    const videoDevices = devices.filter((d) => d.kind === 'videoinput');
+    const audioDevices = devices.filter((d) => d.kind === 'audioinput');
     return {
-        videoDevices: window.videoDevices,
-        audioDevices: window.audioDevices
+        videoDevices,
+        audioDevices
     };
 }
 
-async function requestMediaStream(){
+export async function requestVideoMediaStream(videoDevice: MediaDeviceInfo) {
     const videoConfiguration = {
         maxWidth: 1280,
         maxHeight: 720,
         maxFramerate: 30,
     }
 
-    window.cameraStream = await navigator.mediaDevices.getUserMedia({
+    return await navigator.mediaDevices.getUserMedia({
         video: {
-            deviceId: window.videoDevices[0].deviceId,
+            deviceId: videoDevice.deviceId,
             width: {
                 ideal: videoConfiguration.maxWidth,
             },
             height: {
-                ideal:videoConfiguration.maxHeight,
+                ideal: videoConfiguration.maxHeight,
             },
         },
     });
-    window.microphoneStream = await navigator.mediaDevices.getUserMedia({
-        audio: { deviceId: window.audioDevices[0].deviceId },
+
+
+}
+
+export async function requestAudioMediaStream(audioDevice: MediaDeviceInfo) {
+    return await navigator.mediaDevices.getUserMedia({
+        audio: {deviceId: audioDevice.deviceId},
     });
+
+
 }
