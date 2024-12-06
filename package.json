@@ -11,18 +11,24 @@
   "dependencies": {
     "@aws-sdk/client-ivs": "^3.699.0",
     "@aws-sdk/client-ivschat": "^3.699.0",
+    "@vueuse/core": "^12.0.0",
     "amazon-ivs-player": "^1.34.1",
     "amazon-ivs-web-broadcast": "^1.18.0",
     "amazon-kinesis-video-streams-webrtc": "^2.3.1",
     "aws-sdk": "^2.1692.0",
-    "vue": "^3.5.12"
+    "video.js": "^7.6.6",
+    "vue": "^3.5.12",
+    "vue-router": "^4.5.0"
   },
   "devDependencies": {
+    "@types/video.js": "^7.3.58",
     "@vitejs/plugin-basic-ssl": "^1.1.0",
     "@vitejs/plugin-vue": "^5.1.4",
     "autoprefixer": "^10.4.20",
     "postcss": "^8.4.49",
     "tailwindcss": "^3.4.15",
-    "vite": "^5.4.10"
+    "vite": "^5.4.10",
+    "vite-plugin-top-level-await": "^1.4.4",
+    "vite-plugin-wasm": "^3.3.0"
   }
 }

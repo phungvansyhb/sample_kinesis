@@ -1,4 +1,3 @@
-import AWS from 'aws-sdk';
 import {
     CreateChannelCommand,
     GetChannelCommand,
@@ -10,8 +9,8 @@ import {
 const client = new IvsClient({
     region: 'us-west-2',
     credentials:{
-        accessKeyId: 'import.meta.env.accessKeyId',
-        secretAccessKey: 'import.meta.env.secretAccessKey'
+        accessKeyId: import.meta.env.VITE_ACCESS_KEY_ID,
+        secretAccessKey: import.meta.env.VITE_SECRET_KEY_ID
     }
 });
 
@@ -25,7 +24,8 @@ export async function createIvsChannel(channelName : string){
         });
         return await client.send(command);
     } catch (error) {
-        console.error('Error creating channel:', error);
+        window.alert("create channel error")
+        console.log(error)
     }
 };
 

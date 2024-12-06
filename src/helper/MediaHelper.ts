@@ -15,9 +15,9 @@ export async function handlePermissions() {
     }
     // If we still don't have permissions after requesting them display the error message
     if (!permissions.video) {
-        console.error('Failed to get video permissions.');
+        window.alert('Failed to get video permissions.');
     } else if (!permissions.audio) {
-        console.error('Failed to get audio permissions.');
+        window.alert('Failed to get audio permissions.');
     }
 }
 

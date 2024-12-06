@@ -1,27 +1,27 @@
 <template>
-  <div v-if="!channel">
-    <input class="w-[200px] h-10 border rounded"></input>
-    <button @click="handleCreateChannel">Join channel</button>
-  </div>
-
-  <div  v-if="channel">
-    <IvsPlayer :video-url="channel.channel.playbackUrl"/>
+  <div v-if="channel" class="flex gap-2">
+    <IvsPlayer :video-url="channel?.channel?.playbackUrl" class="aspect-video w-[max(720px,80vw)] border rounded-lg flex-grow" />
+<!--    <Chat/>-->
   </div>
 </template>
 
 <script setup lang="ts">
 
 import IvsPlayer from "./components/IvsPlayer.vue";
-import {ref} from "vue";
+import {onMounted, ref} from "vue";
 import {getIvsChannel} from "./helper/IVSHelper";
 import {CreateChannelCommandOutput} from "@aws-sdk/client-ivs";
+import Chat from "./components/Chat.vue";
+import {useRoute} from "vue-router";
 
-const channelName = ref('')
+const route = useRoute()
+
 const channel = ref<CreateChannelCommandOutput|null>(null)
 
-async function handleCreateChannel(){
-  channel.value = await getIvsChannel(channelName.value)
-}
+onMounted(async () => {
+  channel.value = await getIvsChannel(route.params.channelArn as string)
+})
+
 </script>
 
 <style scoped>
