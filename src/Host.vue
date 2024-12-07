@@ -5,6 +5,7 @@
   </div>
   <div v-else>
     <BroadcastDevice :ingest-endpoint="channel.channel.ingestEndpoint" :streamKey="channel.streamKey.value" :channelARN="channel.channel.arn"/>
+    <Chat :channel-arn="channel.channel.arn" :is-host="true"/>
   </div>
 
 </template>
@@ -14,6 +15,7 @@ import {ref} from "vue";
 import {createIvsChannel} from "./helper/IVSHelper";
 import {CreateChannelCommandOutput} from "@aws-sdk/client-ivs";
 import BroadcastDevice from "./components/BroadcastDevice.vue";
+import Chat from "./components/Chat.vue";
 
 const demoChannel: any = {
   "channel": {

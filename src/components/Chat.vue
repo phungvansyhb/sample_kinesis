@@ -13,22 +13,27 @@
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue';
-import {chatClient} from "../helper/ChatRoomHelper";
+import {createConnectionToRoom, createRoomChat} from "../helper/ChatRoomHelper";
+import {ChatRoom} from "amazon-ivs-chat-messaging";
 
+const props = defineProps<{ channelArn : string , isHost : boolean }>()
+const chatConnection = ref<ChatRoom | null>(null);
 
-const chatConnection = ref(null);
 const messages = ref([]);
 const message = ref('');
 
 onMounted(async () => {
   try {
-    const connection = await chatClient({
-      channelArn: 'your-channel-arn',
-    });
-    chatConnection.value = connection;
-    connection.on('message', (message) => {
-      messages.value.push(message);
-    });
+    const room = await createRoomChat(props.channelArn);
+
+    const fakeUser = {
+      id : Math.round(Math.random()*10).toString(),
+      name : 'John Doe',
+      avatar : 'https://via.placeholder.com/150'
+    }
+
+    chatConnection.value = await createConnectionToRoom({roomArn : room.arn , user :fakeUser , role : props.isHost ? 'host' : 'viewer'})
+
   } catch (error) {
     console.error(error);
   }
@@ -36,8 +41,8 @@ onMounted(async () => {
 
 async function sendMessage() {
   try {
-    await chatClient.send({
-      message : message.value
+    await chatConnection.value.sendMessage({
+
     });
     message.value = '';
   } catch (error) {

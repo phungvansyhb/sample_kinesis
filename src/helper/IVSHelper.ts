@@ -7,7 +7,7 @@ import {
 } from "@aws-sdk/client-ivs";
 
 const client = new IvsClient({
-    region: 'us-west-2',
+    region: import.meta.env.VITE_AWS_REGION,
     credentials:{
         accessKeyId: import.meta.env.VITE_ACCESS_KEY_ID,
         secretAccessKey: import.meta.env.VITE_SECRET_KEY_ID
