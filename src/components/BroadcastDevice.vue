@@ -1,7 +1,6 @@
 <template>
   <div class="w-full">
-
-    <canvas id="videoElement" class="aspect-video w-[max(720px,80vw)] border rounded-lg"></canvas>
+    <canvas id="videoElement" class="aspect-video w-auto border rounded-lg"></canvas>
     <div class="flex justify-center gap-2 p-4">
       <select>
         <option v-for="camera in cameraDevices" :key="camera.deviceId" @click="onSelectCamera(camera)">{{camera.label}}</option>
@@ -12,10 +11,10 @@
     </div>
     <div class="font-bold p-2">{{live ? 'LIVE' : 'OFFLINE'}}</div>
     <div class="flex gap-2 justify-center">
-      <button @click="startBroadcast">Mute </button>
-      <button @click="startBroadcast">Hide video </button>
+      <button @click="mute" >Mute </button>
+      <button @click="hideVideo" >Hide/unhide video </button>
       <button @click="startBroadcast">Start stream</button>
-      <button @click="stopBroadcast">Stop stream</button>
+      <button @click="stopBroadcast" disabled>Stop stream</button>
       <button @click="shareStream">Share stream</button>
     </div>
 
@@ -28,7 +27,7 @@ import {onMounted, reactive, ref} from "vue";
 import IVSBroadcastClient, {AmazonIVSBroadcastClient} from 'amazon-ivs-web-broadcast';
 import {handlePermissions, listDevice, requestVideoMediaStream , requestAudioMediaStream} from "../helper/MediaHelper";
 
-const props = defineProps<{ingestEndpoint : string , streamKey : string , channelARN : string}>()
+const props = defineProps<{ingestEndpoint : string , streamKey : string , channelARN : string, chatARN : string}>()
 let client = reactive<AmazonIVSBroadcastClient>(IVSBroadcastClient.create({
   streamConfig: IVSBroadcastClient.BASIC_LANDSCAPE,
   ingestEndpoint : props.ingestEndpoint,
@@ -48,7 +47,7 @@ async function addAudioToStream(selected : MediaDeviceInfo){
 }
 
 function shareStream(){
-  navigator.clipboard.writeText(`http://localhost:5173/channel/${encodeURIComponent(props.channelARN)}`)
+  navigator.clipboard.writeText(`http://localhost:5173/channel?channelArn=${encodeURIComponent(props.channelARN)}&chatArn=${encodeURIComponent(props.chatARN)}`)
 }
 
 async function onSelectCamera(selected : MediaDeviceInfo){
@@ -75,6 +74,14 @@ function startBroadcast(){
 function stopBroadcast(){
   live.value = false
   client.stopBroadcast()
+}
+
+function hideVideo(){
+  client.disableVideo()
+}
+
+function mute(){
+  client.disableAudio()
 }
 
 

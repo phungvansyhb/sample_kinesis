@@ -5,7 +5,7 @@ import {createRouter, createWebHistory} from "vue-router";
 
 const routes = [
     { name: 'Home', strict : true, path: '/', component :()=> import('./Host.vue') },
-    { name:'Viewer',strict : true, path: '/channel/:channelArn', component: ()=> import('./Viewer.vue') },
+    { name:'Viewer',strict : true, path: '/channel', component: ()=> import('./Viewer.vue') },
 ]
 
 const router = createRouter({

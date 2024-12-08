@@ -3,14 +3,13 @@ import {
     GetChannelCommand,
     GetStreamKeyCommand,
     IvsClient,
-    ListStreamsCommand
 } from "@aws-sdk/client-ivs";
 
 const client = new IvsClient({
     region: import.meta.env.VITE_AWS_REGION,
     credentials:{
-        accessKeyId: import.meta.env.VITE_ACCESS_KEY_ID,
-        secretAccessKey: import.meta.env.VITE_SECRET_KEY_ID
+        accessKeyId: import.meta.env.VITE_AWS_ACCESS_KEY_ID,
+        secretAccessKey: import.meta.env.VITE_AWS_SECRET_ACCESS_KEY
     }
 });
 

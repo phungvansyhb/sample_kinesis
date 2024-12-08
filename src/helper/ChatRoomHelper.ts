@@ -25,7 +25,7 @@ type ClaimRoomToken = {
 }
 
 export const SDKClient = new IvschatClient({
-    region: import.meta.env.VITE_REGION,
+    region: import.meta.env.VITE_AWS_REGION,
     credentials: {
         accessKeyId: import.meta.env.VITE_AWS_ACCESS_KEY_ID,
         secretAccessKey: import.meta.env.VITE_AWS_SECRET_ACCESS_KEY,
@@ -34,6 +34,7 @@ export const SDKClient = new IvschatClient({
 });
 
 export async function createRoomToken({user, roomArn, role}:ClaimRoomToken){
+    console.log('create tokenß')
     const input : CreateChatTokenCommandInput = {
         roomIdentifier: roomArn,
         userId: user.id,
@@ -51,11 +52,10 @@ export async function createRoomChat(roomName : string){
     const input : CreateRoomRequest = {
         name: roomName,
         maximumMessageRatePerSecond: 10,
-        maximumMessageLength: 5000,
+        maximumMessageLength: 256,
     }
     const command = new CreateRoomCommand(input);
     return await SDKClient.send(command);
-
 }
 
 export async function deleteRoom(roomArn : string){
@@ -73,9 +73,8 @@ export async function getRoom(roomArn : string){
 }
 
 
-/* for frontend */
-
 export async function createConnectionToRoom(claimRoomToken : ClaimRoomToken){
+    console.log('create connection')
     return new ChatRoom({
         regionOrUrl: import.meta.env.VITE_AWS_REGION,
         tokenProvider: async () => {
@@ -85,6 +84,8 @@ export async function createConnectionToRoom(claimRoomToken : ClaimRoomToken){
                 tokenExpirationTime: new Date(token.tokenExpirationTime),
                 sessionExpirationTime: new Date(token.sessionExpirationTime)
             }
-        }
+        },
+        id : "TC6fLHr7ycLt",
+        maxReconnectAttempts : 2
     })
 }
